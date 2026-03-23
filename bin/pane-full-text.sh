@@ -241,18 +241,25 @@ preview_query_terms() {
 preview_line_number_matches_query() {
   local pane_text="$1"
   local query="$2"
-  local matched_row
+  local matched_row status
 
   if [ -z "$query" ]; then
     printf '1\n'
     return
   fi
 
+  set +e
   matched_row="$(
     awk -v delim="$DELIM" '{ printf "%d%s%s\n", NR, delim, $0 }' <<<"$pane_text" |
       fzf --delimiter="$DELIM" --nth=2.. --filter "$query" |
       head -n 1
   )"
+  status=$?
+  set -e
+
+  if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
+    return "$status"
+  fi
 
   if [ -n "$matched_row" ]; then
     printf '%s\n' "${matched_row%%"$DELIM"*}"
@@ -503,8 +510,9 @@ pane_rows() {
 pane_search() {
   local query="${1:-}"
   local row pane_id session_name window_index window_name pane_index pane_current_command
-  local pane_text searchable_text match_line_number
+  local pane_text searchable_text match_line_number status
 
+  set +e
   {
     while IFS= read -r row; do
       IFS="$DELIM" read -r pane_id session_name window_index window_name pane_index pane_current_command <<<"$row"
@@ -526,6 +534,12 @@ pane_search() {
     fzf --delimiter="$DELIM" --filter "$query"
   else
     cat
+  fi
+  status=$?
+  set -e
+
+  if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
+    return "$status"
   fi
 }
 
