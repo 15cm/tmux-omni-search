@@ -21,11 +21,11 @@ stdenvNoCC.mkDerivation {
     mkdir -p "$plugin_dir/bin"
 
     cp README.md "$plugin_dir/README.md"
-    cp bin/panel-full-text.sh "$plugin_dir/bin/panel-full-text.sh"
+    cp bin/pane-full-text.sh "$plugin_dir/bin/pane-full-text.sh"
     cp tmux-omni-search.tmux "$plugin_dir/tmux-omni-search.tmux"
-    chmod +x "$plugin_dir/bin/panel-full-text.sh" "$plugin_dir/tmux-omni-search.tmux"
+    chmod +x "$plugin_dir/bin/pane-full-text.sh" "$plugin_dir/tmux-omni-search.tmux"
 
-    wrapProgram "$plugin_dir/bin/panel-full-text.sh" \
+    wrapProgram "$plugin_dir/bin/pane-full-text.sh" \
       --prefix PATH : "${lib.makeBinPath [ bash tmux fzf ]}"
 
     runHook postInstall
