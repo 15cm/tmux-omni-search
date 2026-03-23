@@ -20,7 +20,7 @@
 Add the plugin to your tmux config:
 
 ```tmux
-set -g @plugin 'sinkerine/tmux-omni-search'
+set -g @plugin '15cm/tmux-omni-search'
 run '~/.tmux/plugins/tpm/tpm'
 ```
 
@@ -36,7 +36,7 @@ Example consumer flake:
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    tmux-omni-search.url = "github:sinkerine/tmux-omni-search";
+    tmux-omni-search.url = "github:15cm/tmux-omni-search";
   };
 
   outputs = { self, nixpkgs, tmux-omni-search }:
