@@ -157,85 +157,196 @@ effective_preview_context_lines() {
   printf '%s\n' "$context_lines"
 }
 
-preview_query_token() {
+preview_query_terms() {
   local query="$1"
-  local token
+  local length index=0
+  local char token="" token_type="term"
+  local in_quotes=0 escaped=0
 
-  for token in $query; do
-    token="${token#[![:alnum:]]}"
-    token="${token%[![:alnum:]]}"
-    if [ -n "$token" ]; then
-      printf '%s\n' "$token"
-      return
+  length=${#query}
+  while (( index < length )); do
+    char="${query:index:1}"
+
+    if (( escaped )); then
+      token+="$char"
+      escaped=0
+      index=$(( index + 1 ))
+      continue
     fi
+
+    case "$char" in
+      \\)
+        escaped=1
+        ;;
+      '"')
+        if (( in_quotes )); then
+          token="$(trim_line "$token")"
+          if [ -n "$token" ]; then
+            printf '%s%s%s\n' "phrase" "$DELIM" "$token"
+          fi
+          token=""
+          token_type="term"
+          in_quotes=0
+        else
+          if [ -n "$token" ]; then
+            token="${token#[![:alnum:]]}"
+            token="${token%[![:alnum:]]}"
+            if [ -n "$token" ]; then
+              printf '%s%s%s\n' "$token_type" "$DELIM" "$token"
+            fi
+          fi
+          token=""
+          token_type="phrase"
+          in_quotes=1
+        fi
+        ;;
+      [[:space:]])
+        if (( in_quotes )); then
+          token+="$char"
+        else
+          token="${token#[![:alnum:]]}"
+          token="${token%[![:alnum:]]}"
+          if [ -n "$token" ]; then
+            printf '%s%s%s\n' "$token_type" "$DELIM" "$token"
+          fi
+          token=""
+          token_type="term"
+        fi
+        ;;
+      *)
+        token+="$char"
+        ;;
+    esac
+
+    index=$(( index + 1 ))
   done
 
-  printf '\n'
+  if (( escaped )); then
+    token+="\\"
+  fi
+
+  if (( in_quotes )); then
+    token_type="phrase"
+    token="$(trim_line "$token")"
+  else
+    token="${token#[![:alnum:]]}"
+    token="${token%[![:alnum:]]}"
+  fi
+
+  if [ -n "$token" ]; then
+    printf '%s%s%s\n' "$token_type" "$DELIM" "$token"
+  fi
+}
+
+preview_line_number_matches_query() {
+  local pane_text="$1"
+  local query="$2"
+  local matched_row
+
+  if [ -z "$query" ]; then
+    printf '1\n'
+    return
+  fi
+
+  matched_row="$(
+    awk -v delim="$DELIM" '{ printf "%d%s%s\n", NR, delim, $0 }' <<<"$pane_text" |
+      fzf --delimiter="$DELIM" --nth=2.. --filter "$query" |
+      head -n 1
+  )"
+
+  if [ -n "$matched_row" ]; then
+    printf '%s\n' "${matched_row%%"$DELIM"*}"
+  else
+    printf '1\n'
+  fi
 }
 
 preview_match_line_number() {
   local pane_text="$1"
   local query="$2"
-  local first_token lower_query line
-  local line_number=1
-
-  first_token="$(preview_query_token "$query")"
-  if [ -z "${first_token:-}" ]; then
-    printf '1\n'
-    return
-  fi
-
-  lower_query="${first_token,,}"
-  while IFS= read -r line; do
-    if [[ ${line,,} == *"$lower_query"* ]]; then
-      printf '%s\n' "$line_number"
-      return
-    fi
-    line_number=$(( line_number + 1 ))
-  done <<<"$pane_text"
-
-  printf '1\n'
+  preview_line_number_matches_query "$pane_text" "$query"
 }
 
-highlight_first_match() {
+highlight_query_matches() {
   local line="$1"
   local query="$2"
-  local lower_line lower_query prefix position query_length
-  local match suffix
-  local first_token
+  local -a candidates=()
+  local -a spans=()
+  local -a accepted_spans=()
+  local candidate type token lower_token lower_line remainder prefix
+  local start search_offset type_priority length record
+  local accepted_start accepted_length accepted_end
+  local last_position=0
 
   if [ -z "$query" ]; then
     print_preview_text "$line"
     return
   fi
 
-  # fzf queries can contain multiple terms and operators. For preview purposes,
-  # highlight the first plain token if we can derive one.
-  first_token="$(preview_query_token "$query")"
-
-  if [ -z "${first_token:-}" ]; then
+  mapfile -t candidates < <(preview_query_terms "$query")
+  if (( ${#candidates[@]} == 0 )); then
     print_preview_text "$line"
     return
   fi
 
   lower_line="${line,,}"
-  lower_query="${first_token,,}"
-  if [[ $lower_line != *"$lower_query"* ]]; then
+
+  for candidate in "${candidates[@]}"; do
+    IFS="$DELIM" read -r type token <<<"$candidate"
+    [ -n "$token" ] || continue
+
+    if [ "$type" = "phrase" ]; then
+      type_priority=0
+    else
+      type_priority=1
+    fi
+
+    lower_token="${token,,}"
+    length=${#token}
+    search_offset=0
+
+    while (( search_offset <= ${#lower_line} - length )); do
+      remainder="${lower_line:search_offset}"
+      if [[ $remainder != *"$lower_token"* ]]; then
+        break
+      fi
+
+      prefix="${remainder%%"$lower_token"*}"
+      start=$(( search_offset + ${#prefix} ))
+      spans+=("$start"$'\t'"$type_priority"$'\t'"$length")
+      search_offset=$(( start + 1 ))
+    done
+  done
+
+  if (( ${#spans[@]} == 0 )); then
     print_preview_text "$line"
     return
   fi
 
-  prefix="${lower_line%%"$lower_query"*}"
-  position="${#prefix}"
-  query_length="${#first_token}"
-  match="${line:position:query_length}"
-  suffix="${line:position + query_length}"
+  mapfile -t spans < <(printf '%s\n' "${spans[@]}" | sort -t $'\t' -k1,1n -k2,2n -k3,3nr -u)
 
-  printf '%s' "${line:0:position}"
-  printf '\033[1;31m'
-  printf '%s' "$match"
-  printf '\033[0m'
-  print_preview_text "$suffix"
+  for record in "${spans[@]}"; do
+    IFS=$'\t' read -r start _ length <<<"$record"
+
+    if (( ${#accepted_spans[@]} > 0 )); then
+      IFS=$'\t' read -r accepted_start accepted_length <<<"${accepted_spans[-1]}"
+      accepted_end=$(( accepted_start + accepted_length ))
+      if (( start < accepted_end )); then
+        continue
+      fi
+    fi
+
+    accepted_spans+=("$start"$'\t'"$length")
+  done
+
+  for record in "${accepted_spans[@]}"; do
+    IFS=$'\t' read -r start length <<<"$record"
+    printf '%s' "${line:last_position:start - last_position}"
+    printf '\033[1;31m%s\033[0m' "${line:start:length}"
+    last_position=$(( start + length ))
+  done
+
+  print_preview_text "${line:last_position}"
 }
 
 print_preview_header() {
@@ -450,7 +561,7 @@ pane_preview() {
     for i in "${!lines[@]}"; do
       if (( i + 1 == match_line )); then
         printf '\033[1m%6s\033[0m  ' "$(( i + 1 ))"
-        highlight_first_match "$(strip_ansi_from_line "${lines[i]}")" "$query"
+        highlight_query_matches "$(strip_ansi_from_line "${lines[i]}")" "$query"
       else
         print_preview_body_line "$(( i + 1 ))" "$(strip_ansi_from_line "${lines[i]}")"
       fi
@@ -474,7 +585,7 @@ pane_preview() {
   for ((i = start; i <= end; i++)); do
     if (( i + 1 == match_line )); then
       printf '\033[1m%6s\033[0m  ' "$(( i + 1 ))"
-      highlight_first_match "$(strip_ansi_from_line "${lines[i]}")" "$query"
+      highlight_query_matches "$(strip_ansi_from_line "${lines[i]}")" "$query"
     else
       print_preview_body_line "$(( i + 1 ))" "$(strip_ansi_from_line "${lines[i]}")"
     fi
