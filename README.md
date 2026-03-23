@@ -66,6 +66,7 @@ set -g @omni-search-popup-height "38%"
 set -g @omni-search-preview "on"
 set -g @omni-search-preview-context-lines "20"
 set -g @omni-search-preview-fill-window "on"
+set -g @omni-search-pane-capture-limit "3000"
 set -g @omni-search-fzf-options "--border rounded"
 ```
 
@@ -75,13 +76,14 @@ set -g @omni-search-fzf-options "--border rounded"
 - `@omni-search-preview`: `on` or `off`
 - `@omni-search-preview-context-lines`: non-negative total number of surrounding lines shown around the first match in preview, split across before and after
 - `@omni-search-preview-fill-window`: `on` expands preview context to use the current `fzf` preview height when possible
+- `@omni-search-pane-capture-limit`: non-negative number of pane-history lines captured from the tail of scrollback for search and preview; `0` disables the limit
 - `@omni-search-fzf-options`: extra arguments appended to `fzf`
 
 ## Usage
 
 Source the plugin and press the configured launch key.
 
-- The launcher loads all panes into `fzf` up front using `tmux capture-pane`.
+- The launcher loads pane contents, including scrollback history, into `fzf` up front using `tmux capture-pane -S -`, then keeps only the last `@omni-search-pane-capture-limit` lines by default.
 - Search semantics come from `fzf`, applied to the full pane row before the visible columns are rendered.
 - Repeated shell prompt/status prefixes are de-emphasized during indexing so they rank below pane output more often.
 - The candidate list shows session, window, pane, and current command; pane text still participates in matching and preview.

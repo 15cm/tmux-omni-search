@@ -67,6 +67,24 @@ parse_non_negative_integer() {
   printf '%s\n' "$value"
 }
 
+pane_capture_limit() {
+  parse_non_negative_integer "$(get_tmux_option "@omni-search-pane-capture-limit" "3000")" "3000" "@omni-search-pane-capture-limit"
+}
+
+capture_pane_text() {
+  local pane_id="$1"
+  local capture_limit pane_text
+
+  capture_limit="$(pane_capture_limit)"
+  pane_text="$(tmux capture-pane -p -S - -t "$pane_id")"
+
+  if (( capture_limit > 0 )); then
+    printf '%s\n' "$pane_text" | tail -n "$capture_limit"
+  else
+    printf '%s\n' "$pane_text"
+  fi
+}
+
 require_command() {
   local command_name="$1"
 
@@ -379,7 +397,7 @@ pane_search() {
   {
     while IFS= read -r row; do
       IFS="$DELIM" read -r pane_id session_name window_index window_name pane_index pane_current_command <<<"$row"
-      pane_text="$(tmux capture-pane -p -t "$pane_id")"
+      pane_text="$(capture_pane_text "$pane_id")"
       searchable_text="$(searchable_pane_text "$pane_text")"
       match_line_number="$(preview_match_line_number "$pane_text" "$query")"
 
@@ -412,7 +430,7 @@ pane_preview() {
 
   [ -n "$pane_id" ] || exit 0
 
-  pane_text="$(tmux capture-pane -p -t "$pane_id")"
+  pane_text="$(capture_pane_text "$pane_id")"
   mapfile -t lines <<<"$pane_text"
   effective_context_lines="$(effective_preview_context_lines "$query" "$context_lines" "$fill_window")"
   if (( ${#lines[@]} == 0 )); then
