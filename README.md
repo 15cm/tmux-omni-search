@@ -61,6 +61,20 @@ Or install it from another flake output with:
 tmux-omni-search.packages.${pkgs.system}.default
 ```
 
+## Quick Start
+
+Add a launch key to your tmux config, then reload tmux:
+
+```tmux
+set -g @omni-search-launch-key "F"
+```
+
+```sh
+tmux source-file ~/.tmux.conf
+```
+
+Press `prefix` + `Shift-F` to open `tmux-omni-search` with the default key shown above.
+
 ## tmux Options
 
 ```tmux
