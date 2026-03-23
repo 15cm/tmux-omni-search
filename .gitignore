@@ -1,0 +1,5 @@
+docs/drafts/
+result
+tmux-client-*.log
+tmux-server-*.log
+tmux-out-*.log
