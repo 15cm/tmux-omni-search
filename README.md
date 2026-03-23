@@ -2,6 +2,10 @@
 
 `tmux-omni-search` is a standalone tmux plugin for full-text searching across all tmux panes and jumping to the selected match from an `fzf-tmux` popup.
 
+## Demo
+
+[![asciicast](https://asciinema.org/a/861902.svg)](https://asciinema.org/a/861902)
+
 ## Dependencies
 
 - `bash`
@@ -84,7 +88,8 @@ set -g @omni-search-fzf-options "--border rounded"
 Source the plugin and press the configured launch key.
 
 - The launcher loads pane contents, including scrollback history, into `fzf` up front using `tmux capture-pane -S -`, then keeps only the last `@omni-search-pane-capture-limit` lines by default.
-- Search semantics come from `fzf`, applied to the full pane row before the visible columns are rendered.
+- Search semantics come from `fzf`, applied to a hidden search corpus that starts with session metadata before pane text.
+- Session-name matches are intentionally weighted above weaker pane-text matches.
 - Repeated shell prompt/status prefixes are de-emphasized during indexing so they rank below pane output more often.
 - The candidate list shows session, window, pane, and current command; pane text still participates in matching and preview.
 - Empty query shows all panes.
