@@ -2,6 +2,7 @@
 
 CURRENT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 SCRIPT_PATH="${CURRENT_DIR}/bin/panel-full-text.sh"
+SCRIPT_PATH_SQ="$(printf "%s\n" "$SCRIPT_PATH" | sed "s/'/'\\\\''/g")"
 
 get_tmux_option() {
   local option="$1"
@@ -18,4 +19,4 @@ get_tmux_option() {
 
 launch_key="$(get_tmux_option "@omni-search-launch-key" "F")"
 
-tmux bind-key "$launch_key" run-shell -b "$SCRIPT_PATH"
+tmux bind-key "$launch_key" run-shell -b "sh -c '$SCRIPT_PATH_SQ; status=\$?; [ \$status -eq 130 ] && exit 0; exit \$status'"

@@ -8,7 +8,6 @@ set -euo pipefail
 
 readonly PREVIEW_CONTEXT=3
 readonly DELIM=$'\t'
-PREVIEW_GLYPH_MODE="annotate"
 
 ensure_utf8_locale() {
   local current_locale locale_bin locale_list candidate
@@ -82,94 +81,14 @@ require_tmux_version() {
 
 strip_ansi_from_line() {
   local line="$1"
+
   line="${line//$'\033'/}"
   printf '%s\n' "$line"
 }
 
-format_preview_char() {
-  local char="$1"
-  local codepoint
-
-  case "$char" in
-    $'\t')
-      printf '\\t'
-      return
-      ;;
-    $'\r')
-      printf '\\r'
-      return
-      ;;
-    $'\n')
-      printf '\\n'
-      return
-      ;;
-  esac
-
-  codepoint="$(printf '%d' "'$char")"
-  case "$PREVIEW_GLYPH_MODE" in
-    raw)
-      if (( codepoint < 32 || codepoint == 127 )); then
-        printf '<0x%02X>' "$codepoint"
-      else
-        printf '%s' "$char"
-      fi
-      return
-      ;;
-    codepoint)
-      if (( codepoint >= 32 && codepoint <= 126 )); then
-        printf '%s' "$char"
-      elif (( codepoint <= 255 )); then
-        printf '<0x%02X>' "$codepoint"
-      else
-        printf '<U+%04X>' "$codepoint"
-      fi
-      return
-      ;;
-    annotate)
-      ;;
-    *)
-      PREVIEW_GLYPH_MODE="annotate"
-      ;;
-  esac
-
-  if (( codepoint >= 32 && codepoint <= 126 )); then
-    printf '%s' "$char"
-    return
-  fi
-
-  if (( codepoint <= 255 )); then
-    printf '<0x%02X>' "$codepoint"
-    return
-  fi
-
-  printf '%s<U+%04X>' "$char" "$codepoint"
-}
-
-annotate_preview_text() {
+print_preview_text() {
   local text="$1"
-  local char
-  local i
-
-  for ((i = 0; i < ${#text}; i++)); do
-    char="${text:i:1}"
-    format_preview_char "$char"
-  done
-
   printf '\n'
-}
-
-load_preview_glyph_mode() {
-  local glyph_mode
-
-  glyph_mode="$(get_tmux_option "@omni-search-preview-glyphs" "annotate")"
-  case "$glyph_mode" in
-    raw|codepoint|annotate)
-      PREVIEW_GLYPH_MODE="$glyph_mode"
-      ;;
-    *)
-      PREVIEW_GLYPH_MODE="annotate"
-      ;;
-  esac
 }
 
 highlight_first_match() {
@@ -179,14 +98,14 @@ highlight_first_match() {
   local match suffix
 
   if [ -z "$query" ]; then
-    annotate_preview_text "$line"
+    print_preview_text "$line"
     return
   fi
 
   lower_line="${line,,}"
   lower_query="${query,,}"
   if [[ $lower_line != *"$lower_query"* ]]; then
-    annotate_preview_text "$line"
+    print_preview_text "$line"
     return
   fi
 
@@ -196,11 +115,11 @@ highlight_first_match() {
   match="${line:position:query_length}"
   suffix="${line:position + query_length}"
 
-  annotate_preview_text "${line:0:position}" | tr -d '\n'
+  printf '%s' "${line:0:position}"
   printf '\033[1;31m'
-  annotate_preview_text "$match" | tr -d '\n'
+  printf '%s' "$match"
   printf '\033[0m'
-  annotate_preview_text "$suffix"
+  print_preview_text "$suffix"
 }
 
 first_matching_line() {
@@ -233,7 +152,7 @@ pane_search() {
 
   while IFS= read -r row; do
     IFS="$DELIM" read -r pane_id session_name window_index window_name pane_index pane_title <<<"$row"
-    pane_text="$(tmux capture-pane -ep -t "$pane_id")"
+    pane_text="$(tmux capture-pane -p -t "$pane_id")"
     if ! matched_line="$(first_matching_line "$query" <<<"$pane_text")"; then
       continue
     fi
@@ -243,7 +162,7 @@ pane_search() {
       snippet="${snippet:0:157}..."
     fi
 
-    printf '%s\t%s\t%s:%s.%s\t%s\n' \
+    printf '%s\t%s %s:%s.%s\t%s\n' \
       "$pane_id" \
       "$session_name" \
       "$window_index" \
@@ -262,8 +181,7 @@ pane_preview() {
 
   [ -n "$pane_id" ] || exit 0
 
-  load_preview_glyph_mode
-  pane_text="$(tmux capture-pane -ep -t "$pane_id")"
+  pane_text="$(tmux capture-pane -p -t "$pane_id")"
   mapfile -t lines <<<"$pane_text"
   first_match=-1
 
@@ -297,7 +215,7 @@ pane_preview() {
       highlight_first_match "$(strip_ansi_from_line "${lines[i]}")" "$query"
     else
       printf '  '
-      annotate_preview_text "$(strip_ansi_from_line "${lines[i]}")"
+      print_preview_text "$(strip_ansi_from_line "${lines[i]}")"
     fi
   done
 }
@@ -336,7 +254,7 @@ run_launcher() {
       --ansi \
       --disabled \
       --delimiter="$DELIM" \
-      --with-nth=2,3,4 \
+      --with-nth=2,3 \
       --preview-window="$preview_window" \
       --preview "$preview_command" \
       --prompt 'Pane text> ' \
