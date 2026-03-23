@@ -8,6 +8,7 @@ set -euo pipefail
 
 readonly PREVIEW_CONTEXT=3
 readonly DELIM=$'\t'
+PREVIEW_GLYPH_MODE="annotate"
 
 ensure_utf8_locale() {
   local current_locale locale_bin locale_list candidate
@@ -79,37 +80,127 @@ require_tmux_version() {
   fi
 }
 
-escape_preview_line() {
+strip_ansi_from_line() {
   local line="$1"
   line="${line//$'\033'/}"
   printf '%s\n' "$line"
+}
+
+format_preview_char() {
+  local char="$1"
+  local codepoint
+
+  case "$char" in
+    $'\t')
+      printf '\\t'
+      return
+      ;;
+    $'\r')
+      printf '\\r'
+      return
+      ;;
+    $'\n')
+      printf '\\n'
+      return
+      ;;
+  esac
+
+  codepoint="$(printf '%d' "'$char")"
+  case "$PREVIEW_GLYPH_MODE" in
+    raw)
+      if (( codepoint < 32 || codepoint == 127 )); then
+        printf '<0x%02X>' "$codepoint"
+      else
+        printf '%s' "$char"
+      fi
+      return
+      ;;
+    codepoint)
+      if (( codepoint >= 32 && codepoint <= 126 )); then
+        printf '%s' "$char"
+      elif (( codepoint <= 255 )); then
+        printf '<0x%02X>' "$codepoint"
+      else
+        printf '<U+%04X>' "$codepoint"
+      fi
+      return
+      ;;
+    annotate)
+      ;;
+    *)
+      PREVIEW_GLYPH_MODE="annotate"
+      ;;
+  esac
+
+  if (( codepoint >= 32 && codepoint <= 126 )); then
+    printf '%s' "$char"
+    return
+  fi
+
+  if (( codepoint <= 255 )); then
+    printf '<0x%02X>' "$codepoint"
+    return
+  fi
+
+  printf '%s<U+%04X>' "$char" "$codepoint"
+}
+
+annotate_preview_text() {
+  local text="$1"
+  local char
+  local i
+
+  for ((i = 0; i < ${#text}; i++)); do
+    char="${text:i:1}"
+    format_preview_char "$char"
+  done
+
+  printf '\n'
+}
+
+load_preview_glyph_mode() {
+  local glyph_mode
+
+  glyph_mode="$(get_tmux_option "@omni-search-preview-glyphs" "annotate")"
+  case "$glyph_mode" in
+    raw|codepoint|annotate)
+      PREVIEW_GLYPH_MODE="$glyph_mode"
+      ;;
+    *)
+      PREVIEW_GLYPH_MODE="annotate"
+      ;;
+  esac
 }
 
 highlight_first_match() {
   local line="$1"
   local query="$2"
   local lower_line lower_query prefix position query_length
+  local match suffix
 
   if [ -z "$query" ]; then
-    printf '%s\n' "$line"
+    annotate_preview_text "$line"
     return
   fi
 
   lower_line="${line,,}"
   lower_query="${query,,}"
   if [[ $lower_line != *"$lower_query"* ]]; then
-    printf '%s\n' "$line"
+    annotate_preview_text "$line"
     return
   fi
 
   prefix="${lower_line%%"$lower_query"*}"
   position="${#prefix}"
   query_length="${#query}"
+  match="${line:position:query_length}"
+  suffix="${line:position + query_length}"
 
-  printf '%s\033[1;31m%s\033[0m%s\n' \
-    "${line:0:position}" \
-    "${line:position:query_length}" \
-    "${line:position + query_length}"
+  annotate_preview_text "${line:0:position}" | tr -d '\n'
+  printf '\033[1;31m'
+  annotate_preview_text "$match" | tr -d '\n'
+  printf '\033[0m'
+  annotate_preview_text "$suffix"
 }
 
 first_matching_line() {
@@ -171,6 +262,7 @@ pane_preview() {
 
   [ -n "$pane_id" ] || exit 0
 
+  load_preview_glyph_mode
   pane_text="$(tmux capture-pane -ep -t "$pane_id")"
   mapfile -t lines <<<"$pane_text"
   first_match=-1
@@ -202,9 +294,10 @@ pane_preview() {
   for ((i = start; i <= end; i++)); do
     if (( i == first_match )); then
       printf '> '
-      highlight_first_match "$(escape_preview_line "${lines[i]}")" "$query"
+      highlight_first_match "$(strip_ansi_from_line "${lines[i]}")" "$query"
     else
-      printf '  %s\n' "$(escape_preview_line "${lines[i]}")"
+      printf '  '
+      annotate_preview_text "$(strip_ansi_from_line "${lines[i]}")"
     fi
   done
 }
@@ -283,10 +376,12 @@ main() {
       run_launcher
       ;;
     search)
+      trap 'exit 0' INT TERM
       shift
       pane_search "${1:-}"
       ;;
     preview)
+      trap 'exit 0' INT TERM
       shift
       pane_preview "${1:-}" "${2:-}"
       ;;

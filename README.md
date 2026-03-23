@@ -64,6 +64,7 @@ set -g @omni-search-launch-key "F"
 set -g @omni-search-popup-width "62%"
 set -g @omni-search-popup-height "38%"
 set -g @omni-search-preview "on"
+set -g @omni-search-preview-glyphs "annotate"
 set -g @omni-search-fzf-options "--border rounded"
 ```
 
@@ -71,6 +72,7 @@ set -g @omni-search-fzf-options "--border rounded"
 - `@omni-search-popup-width`: popup width for `fzf-tmux`
 - `@omni-search-popup-height`: popup height for `fzf-tmux`
 - `@omni-search-preview`: `on` or `off`
+- `@omni-search-preview-glyphs`: `raw`, `codepoint`, or `annotate`
 - `@omni-search-fzf-options`: extra arguments appended to `fzf`
 
 ## Usage
@@ -81,5 +83,6 @@ Source the plugin and press the configured launch key.
 - Non-empty query scans all panes with `tmux capture-pane -ep`.
 - Search is case-insensitive fixed-string matching.
 - Preview shows nearby context with the first match highlighted.
+- Preview can render glyphs as raw text, pure code points, or annotated `glyph<U+XXXX>` markers for easier prompt-symbol inspection.
 - `Enter` switches to the selected pane.
 - `Ctrl-/` toggles preview.
