@@ -6,7 +6,6 @@ fi
 
 set -euo pipefail
 
-readonly PREVIEW_CONTEXT=3
 readonly DELIM=$'\t'
 
 ensure_utf8_locale() {
@@ -50,6 +49,23 @@ fail() {
   exit 1
 }
 
+parse_non_negative_integer() {
+  local value="$1"
+  local default_value="$2"
+  local option_name="$3"
+
+  if [ -z "$value" ]; then
+    printf '%s\n' "$default_value"
+    return
+  fi
+
+  if [[ ! $value =~ ^[0-9]+$ ]]; then
+    fail "$option_name must be a non-negative integer."
+  fi
+
+  printf '%s\n' "$value"
+}
+
 require_command() {
   local command_name="$1"
 
@@ -88,6 +104,22 @@ strip_ansi_from_line() {
 
 print_preview_text() {
   local text="$1"
+  printf '%s\n' "$text"
+}
+
+preview_query_token() {
+  local query="$1"
+  local token
+
+  for token in $query; do
+    token="${token#[![:alnum:]]}"
+    token="${token%[![:alnum:]]}"
+    if [ -n "$token" ]; then
+      printf '%s\n' "$token"
+      return
+    fi
+  done
+
   printf '\n'
 }
 
@@ -96,14 +128,24 @@ highlight_first_match() {
   local query="$2"
   local lower_line lower_query prefix position query_length
   local match suffix
+  local first_token
 
   if [ -z "$query" ]; then
     print_preview_text "$line"
     return
   fi
 
+  # fzf queries can contain multiple terms and operators. For preview purposes,
+  # highlight the first plain token if we can derive one.
+  first_token="$(preview_query_token "$query")"
+
+  if [ -z "${first_token:-}" ]; then
+    print_preview_text "$line"
+    return
+  fi
+
   lower_line="${line,,}"
-  lower_query="${query,,}"
+  lower_query="${first_token,,}"
   if [[ $lower_line != *"$lower_query"* ]]; then
     print_preview_text "$line"
     return
@@ -111,7 +153,7 @@ highlight_first_match() {
 
   prefix="${lower_line%%"$lower_query"*}"
   position="${#prefix}"
-  query_length="${#query}"
+  query_length="${#first_token}"
   match="${line:position:query_length}"
   suffix="${line:position + query_length}"
 
@@ -137,44 +179,59 @@ first_matching_line() {
   return 1
 }
 
+sanitize_field() {
+  local text="$1"
+
+  text="${text//$'\t'/ }"
+  text="${text//$'\r'/ }"
+  printf '%s' "$text"
+}
+
+searchable_pane_text() {
+  local pane_text="$1"
+  local line
+  local combined=""
+
+  while IFS= read -r line; do
+    line="$(strip_ansi_from_line "$line")"
+    line="$(sanitize_field "$line")"
+    if [ -n "$combined" ]; then
+      combined+=" "
+    fi
+    combined+="$line"
+  done <<<"$pane_text"
+
+  printf '%s\n' "$combined"
+}
+
 pane_rows() {
-  tmux list-panes -a -F "#{pane_id}${DELIM}#{session_name}${DELIM}#{window_index}${DELIM}#{window_name}${DELIM}#{pane_index}${DELIM}#{pane_title}"
+  tmux list-panes -a -F "#{pane_id}${DELIM}#{session_name}${DELIM}#{window_index}${DELIM}#{window_name}${DELIM}#{pane_index}${DELIM}#{pane_current_command}"
 }
 
 pane_search() {
-  local query="$1"
-  local row pane_id session_name window_index window_name pane_index pane_title
-  local pane_text matched_line snippet
-
-  if [ -z "$query" ]; then
-    exit 0
-  fi
+  local row pane_id session_name window_index window_name pane_index pane_current_command
+  local pane_text searchable_text
 
   while IFS= read -r row; do
-    IFS="$DELIM" read -r pane_id session_name window_index window_name pane_index pane_title <<<"$row"
+    IFS="$DELIM" read -r pane_id session_name window_index window_name pane_index pane_current_command <<<"$row"
     pane_text="$(tmux capture-pane -p -t "$pane_id")"
-    if ! matched_line="$(first_matching_line "$query" <<<"$pane_text")"; then
-      continue
-    fi
+    searchable_text="$(searchable_pane_text "$pane_text")"
 
-    snippet="$matched_line"
-    if ((${#snippet} > 160)); then
-      snippet="${snippet:0:157}..."
-    fi
-
-    printf '%s\t%s %s:%s.%s\t%s\n' \
-      "$pane_id" \
-      "$session_name" \
+    printf '%s\t%s\t%s:%s.%s\t%s\t%s\n' \
+      "$(sanitize_field "$pane_id")" \
+      "$(sanitize_field "$session_name")" \
+      "$(sanitize_field "$window_name")" \
       "$window_index" \
-      "$window_name" \
       "$pane_index" \
-      "$snippet"
+      "$(sanitize_field "$pane_current_command")" \
+      "$searchable_text"
   done < <(pane_rows)
 }
 
 pane_preview() {
   local pane_id="$1"
   local query="$2"
+  local context_lines="$3"
   local pane_text
   local -a lines=()
   local i first_match start end
@@ -196,12 +253,12 @@ pane_preview() {
     first_match=0
   fi
 
-  start=$(( first_match - PREVIEW_CONTEXT ))
+  start=$(( first_match - context_lines ))
   if (( start < 0 )); then
     start=0
   fi
 
-  end=$(( first_match + PREVIEW_CONTEXT ))
+  end=$(( first_match + context_lines ))
   if (( ${#lines[@]} == 0 )); then
     exit 0
   fi
@@ -222,7 +279,8 @@ pane_preview() {
 
 run_launcher() {
   local script_path quoted_script popup_width popup_height preview_enabled extra_fzf_options
-  local preview_window preview_command reload_command fzf_tmux_bin selection status pane_id
+  local preview_context_lines
+  local preview_window preview_command fzf_tmux_bin selection status pane_id
 
   require_tmux_context
   require_tmux_version
@@ -237,6 +295,7 @@ run_launcher() {
   popup_width="$(get_tmux_option "@omni-search-popup-width" "62%")"
   popup_height="$(get_tmux_option "@omni-search-popup-height" "38%")"
   preview_enabled="$(get_tmux_option "@omni-search-preview" "on")"
+  preview_context_lines="$(parse_non_negative_integer "$(get_tmux_option "@omni-search-preview-context-lines" "3")" "3" "@omni-search-preview-context-lines")"
   extra_fzf_options="$(get_tmux_option "@omni-search-fzf-options" "")"
 
   preview_window="hidden"
@@ -244,23 +303,20 @@ run_launcher() {
     preview_window="right:60%:wrap"
   fi
 
-  reload_command="$quoted_script search {q}"
-  preview_command="$quoted_script preview {1} {q}"
+  preview_command="$quoted_script preview {1} {q} $preview_context_lines"
 
   set +e
   # shellcheck disable=SC2086
   selection="$(
-    bash "$fzf_tmux_bin" -p -w "$popup_width" -h "$popup_height" -- \
+    pane_search | bash "$fzf_tmux_bin" -p -w "$popup_width" -h "$popup_height" -- \
       --ansi \
-      --disabled \
       --delimiter="$DELIM" \
-      --with-nth=2,3 \
+      --with-nth=2,3,4 \
+      --nth=2,3,4,5 \
       --preview-window="$preview_window" \
       --preview "$preview_command" \
       --prompt 'Pane text> ' \
       --header 'Type to search across pane contents' \
-      --bind "start:reload:$reload_command" \
-      --bind "change:reload:$reload_command" \
       --bind 'ctrl-/:toggle-preview' \
       ${extra_fzf_options:+$extra_fzf_options}
   )"
@@ -296,12 +352,12 @@ main() {
     search)
       trap 'exit 0' INT TERM
       shift
-      pane_search "${1:-}"
+      pane_search
       ;;
     preview)
       trap 'exit 0' INT TERM
       shift
-      pane_preview "${1:-}" "${2:-}"
+      pane_preview "${1:-}" "${2:-}" "${3:-3}"
       ;;
     *)
       fail "Unknown mode: $mode"
