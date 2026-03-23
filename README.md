@@ -64,7 +64,8 @@ set -g @omni-search-launch-key "F"
 set -g @omni-search-popup-width "62%"
 set -g @omni-search-popup-height "38%"
 set -g @omni-search-preview "on"
-set -g @omni-search-preview-context-lines "3"
+set -g @omni-search-preview-context-lines "5"
+set -g @omni-search-preview-fill-window "on"
 set -g @omni-search-fzf-options "--border rounded"
 ```
 
@@ -73,6 +74,7 @@ set -g @omni-search-fzf-options "--border rounded"
 - `@omni-search-popup-height`: popup height for `fzf-tmux`
 - `@omni-search-preview`: `on` or `off`
 - `@omni-search-preview-context-lines`: non-negative number of lines shown before and after the first match in preview
+- `@omni-search-preview-fill-window`: `on` expands preview context to use the current `fzf` preview height when possible
 - `@omni-search-fzf-options`: extra arguments appended to `fzf`
 
 ## Usage
@@ -80,8 +82,9 @@ set -g @omni-search-fzf-options "--border rounded"
 Source the plugin and press the configured launch key.
 
 - The launcher loads all panes into `fzf` up front using `tmux capture-pane`.
-- Search semantics come from `fzf` itself, including space-separated term matching in extended-search mode.
+- Search semantics come from `fzf` itself.
 - Empty query shows all panes.
 - Preview shows configurable nearby context with the first match highlighted.
+- When the query is empty, preview doubles the configured context and still expands to fill the preview window when enabled.
 - `Enter` switches to the selected pane.
 - `Ctrl-/` toggles preview.

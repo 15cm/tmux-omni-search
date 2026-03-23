@@ -107,6 +107,30 @@ print_preview_text() {
   printf '%s\n' "$text"
 }
 
+effective_preview_context_lines() {
+  local query="$1"
+  local context_lines="$2"
+  local fill_window="$3"
+  local preview_lines fill_context_lines
+
+  if [ -z "$query" ]; then
+    context_lines=$(( context_lines * 2 ))
+  fi
+
+  if [ "$fill_window" = "on" ] && [[ "${FZF_PREVIEW_LINES:-}" =~ ^[0-9]+$ ]] && (( FZF_PREVIEW_LINES > 0 )); then
+    preview_lines=$(( FZF_PREVIEW_LINES - 1 ))
+    if (( preview_lines < 0 )); then
+      preview_lines=0
+    fi
+    fill_context_lines=$(( preview_lines / 2 ))
+    if (( fill_context_lines > context_lines )); then
+      context_lines=$fill_context_lines
+    fi
+  fi
+
+  printf '%s\n' "$context_lines"
+}
+
 preview_query_token() {
   local query="$1"
   local token
@@ -232,15 +256,17 @@ pane_preview() {
   local pane_id="$1"
   local query="$2"
   local context_lines="$3"
+  local fill_window="${4:-on}"
   local pane_text
   local -a lines=()
-  local i first_match start end
+  local i first_match start end effective_context_lines
 
   [ -n "$pane_id" ] || exit 0
 
   pane_text="$(tmux capture-pane -p -t "$pane_id")"
   mapfile -t lines <<<"$pane_text"
   first_match=-1
+  effective_context_lines="$(effective_preview_context_lines "$query" "$context_lines" "$fill_window")"
 
   for i in "${!lines[@]}"; do
     if [[ ${lines[i],,} == *"${query,,}"* ]]; then
@@ -253,12 +279,12 @@ pane_preview() {
     first_match=0
   fi
 
-  start=$(( first_match - context_lines ))
+  start=$(( first_match - effective_context_lines ))
   if (( start < 0 )); then
     start=0
   fi
 
-  end=$(( first_match + context_lines ))
+  end=$(( first_match + effective_context_lines ))
   if (( ${#lines[@]} == 0 )); then
     exit 0
   fi
@@ -279,7 +305,7 @@ pane_preview() {
 
 run_launcher() {
   local script_path quoted_script popup_width popup_height preview_enabled extra_fzf_options
-  local preview_context_lines
+  local preview_context_lines preview_fill_window
   local preview_window preview_command fzf_tmux_bin selection status pane_id
 
   require_tmux_context
@@ -295,7 +321,8 @@ run_launcher() {
   popup_width="$(get_tmux_option "@omni-search-popup-width" "62%")"
   popup_height="$(get_tmux_option "@omni-search-popup-height" "38%")"
   preview_enabled="$(get_tmux_option "@omni-search-preview" "on")"
-  preview_context_lines="$(parse_non_negative_integer "$(get_tmux_option "@omni-search-preview-context-lines" "3")" "3" "@omni-search-preview-context-lines")"
+  preview_context_lines="$(parse_non_negative_integer "$(get_tmux_option "@omni-search-preview-context-lines" "5")" "5" "@omni-search-preview-context-lines")"
+  preview_fill_window="$(get_tmux_option "@omni-search-preview-fill-window" "on")"
   extra_fzf_options="$(get_tmux_option "@omni-search-fzf-options" "")"
 
   preview_window="hidden"
@@ -303,7 +330,7 @@ run_launcher() {
     preview_window="right:60%:wrap"
   fi
 
-  preview_command="$quoted_script preview {1} {q} $preview_context_lines"
+  preview_command="$quoted_script preview {1} {q} $preview_context_lines $preview_fill_window"
 
   set +e
   # shellcheck disable=SC2086
@@ -311,8 +338,8 @@ run_launcher() {
     pane_search | bash "$fzf_tmux_bin" -p -w "$popup_width" -h "$popup_height" -- \
       --ansi \
       --delimiter="$DELIM" \
-      --with-nth=2,3,4 \
-      --nth=2,3,4,5 \
+      --with-nth=2,3,4,5 \
+      --accept-nth=1 \
       --preview-window="$preview_window" \
       --preview "$preview_command" \
       --prompt 'Pane text> ' \
@@ -357,7 +384,7 @@ main() {
     preview)
       trap 'exit 0' INT TERM
       shift
-      pane_preview "${1:-}" "${2:-}" "${3:-3}"
+      pane_preview "${1:-}" "${2:-}" "${3:-5}" "${4:-on}"
       ;;
     *)
       fail "Unknown mode: $mode"
