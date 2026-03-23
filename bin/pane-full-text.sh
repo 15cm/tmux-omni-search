@@ -510,7 +510,7 @@ pane_rows() {
 pane_search() {
   local query="${1:-}"
   local row pane_id session_name window_index window_name pane_index pane_current_command
-  local pane_text searchable_text match_line_number status
+  local pane_text searchable_text search_corpus match_line_number status
 
   set +e
   {
@@ -518,6 +518,7 @@ pane_search() {
       IFS="$DELIM" read -r pane_id session_name window_index window_name pane_index pane_current_command <<<"$row"
       pane_text="$(capture_pane_text "$pane_id")"
       searchable_text="$(searchable_pane_text "$pane_text")"
+      search_corpus="$(sanitize_field "$session_name")"$'\t'"$(sanitize_field "$session_name")"$'\t'"$(sanitize_field "$window_name")"$'\t'"$(sanitize_field "$pane_current_command")"$'\t'"$searchable_text"
       match_line_number="$(preview_match_line_number "$pane_text" "$query")"
 
       printf '%s\t%s\t%s:%s.%s\t%s\t%s\t%s\n' \
@@ -528,10 +529,10 @@ pane_search() {
         "$pane_index" \
         "$(sanitize_field "$pane_current_command")" \
         "$match_line_number" \
-        "$searchable_text"
+        "$search_corpus"
     done < <(pane_rows)
   } | if [ -n "$query" ]; then
-    fzf --delimiter="$DELIM" --filter "$query"
+    fzf --delimiter="$DELIM" --nth=6 --filter "$query"
   else
     cat
   fi

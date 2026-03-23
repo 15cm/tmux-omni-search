@@ -4,7 +4,7 @@
 
 `tmux-omni-search` delegates pane filtering to `fzf`.
 
-The launcher builds one row per pane with metadata plus a hidden searchable text column derived from the pane capture. On each query change, the active `fzf` instance reloads rows by invoking:
+The launcher builds one row per pane with visible metadata plus a hidden search corpus. That hidden column starts with higher-priority metadata such as the session name and then appends text derived from the pane capture. On each query change, the active `fzf` instance reloads rows by invoking:
 
 ```sh
 bin/pane-full-text.sh search {q}
@@ -13,10 +13,10 @@ bin/pane-full-text.sh search {q}
 Inside `search`, pane rows are piped through:
 
 ```sh
-fzf --delimiter="$DELIM" --filter "$query"
+fzf --delimiter="$DELIM" --nth=6 --filter "$query"
 ```
 
-That means the candidate set shown in the picker is defined by `fzf` query semantics, not by a separate shell matcher. The script does not implement its own pane filtering rules.
+That means the candidate set shown in the picker is defined by `fzf` query semantics over the hidden search corpus, not by a separate shell matcher. The script does not implement its own pane filtering rules.
 
 ## Preview Pipeline
 
