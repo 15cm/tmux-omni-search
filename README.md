@@ -82,11 +82,11 @@ set -g @omni-search-fzf-options "--border rounded"
 Source the plugin and press the configured launch key.
 
 - The launcher loads all panes into `fzf` up front using `tmux capture-pane`.
-- Search semantics come from `fzf` itself.
+- Search semantics come from `fzf`, applied to the full pane row before the visible columns are rendered.
 - Repeated shell prompt/status prefixes are de-emphasized during indexing so they rank below pane output more often.
 - The candidate list shows session, window, pane, and current command; pane text still participates in matching and preview.
 - Empty query shows all panes.
-- Preview shows a fixed 5-line header plus numbered pane text with the first match highlighted.
+- Preview shows numbered pane text with the first match highlighted.
 - When the query is empty, preview doubles the configured context and still expands to fill the preview window when enabled.
 - `Enter` switches to the selected pane.
 - `Ctrl-/` toggles preview.

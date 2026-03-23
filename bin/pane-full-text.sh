@@ -109,7 +109,7 @@ print_preview_text() {
 }
 
 preview_header_lines() {
-  printf '%s\n' "5"
+  printf '%s\n' "0"
 }
 
 effective_preview_context_lines() {
@@ -221,26 +221,7 @@ highlight_first_match() {
 }
 
 print_preview_header() {
-  local pane_id="$1"
-  local query="$2"
-  local match_line="$3"
-  local metadata session_name window_name window_index pane_index pane_current_command
-  local query_label
-
-  metadata="$(tmux display-message -p -t "$pane_id" "#{session_name}${DELIM}#{window_name}${DELIM}#{window_index}${DELIM}#{pane_index}${DELIM}#{pane_current_command}")"
-  IFS="$DELIM" read -r session_name window_name window_index pane_index pane_current_command <<<"$metadata"
-
-  query_label="$query"
-  if [ -z "$query_label" ]; then
-    query_label="<all>"
-  fi
-
-  printf 'Pane: %s\n' "$pane_id"
-  printf 'Session: %s\n' "$session_name"
-  printf 'Window: %s:%s.%s\n' "$window_name" "$window_index" "$pane_index"
-  printf 'Command: %s\n' "$pane_current_command"
-  printf 'Query: %s\n' "$query_label"
-  printf 'Match line: %s\n' "$match_line"
+  :
 }
 
 print_preview_body_line() {
@@ -395,22 +376,28 @@ pane_search() {
   local row pane_id session_name window_index window_name pane_index pane_current_command
   local pane_text searchable_text match_line_number
 
-  while IFS= read -r row; do
-    IFS="$DELIM" read -r pane_id session_name window_index window_name pane_index pane_current_command <<<"$row"
-    pane_text="$(tmux capture-pane -p -t "$pane_id")"
-    searchable_text="$(searchable_pane_text "$pane_text")"
-    match_line_number="$(preview_match_line_number "$pane_text" "$query")"
+  {
+    while IFS= read -r row; do
+      IFS="$DELIM" read -r pane_id session_name window_index window_name pane_index pane_current_command <<<"$row"
+      pane_text="$(tmux capture-pane -p -t "$pane_id")"
+      searchable_text="$(searchable_pane_text "$pane_text")"
+      match_line_number="$(preview_match_line_number "$pane_text" "$query")"
 
-    printf '%s\t%s\t%s:%s.%s\t%s\t%s\t%s\n' \
-      "$(sanitize_field "$pane_id")" \
-      "$(sanitize_field "$session_name")" \
-      "$(sanitize_field "$window_name")" \
-      "$window_index" \
-      "$pane_index" \
-      "$(sanitize_field "$pane_current_command")" \
-      "$match_line_number" \
-      "$searchable_text"
-  done < <(pane_rows)
+      printf '%s\t%s\t%s:%s.%s\t%s\t%s\t%s\n' \
+        "$(sanitize_field "$pane_id")" \
+        "$(sanitize_field "$session_name")" \
+        "$(sanitize_field "$window_name")" \
+        "$window_index" \
+        "$pane_index" \
+        "$(sanitize_field "$pane_current_command")" \
+        "$match_line_number" \
+        "$searchable_text"
+    done < <(pane_rows)
+  } | if [ -n "$query" ]; then
+    fzf --delimiter="$DELIM" --filter "$query"
+  else
+    cat
+  fi
 }
 
 pane_preview() {
@@ -500,9 +487,9 @@ run_launcher() {
 
   preview_window="hidden"
   if [ "$preview_enabled" = "on" ]; then
-    preview_window="right:60%:wrap,~5"
+    preview_window="right:60%:wrap"
     if [ "$preview_fill_window" = "on" ]; then
-      preview_window="right:60%:wrap,+{5}+5/2,~5"
+      preview_window="right:60%:wrap,+{5}/2"
     fi
   fi
 
@@ -514,6 +501,7 @@ run_launcher() {
   selection="$(
     pane_search "" | bash "$fzf_tmux_bin" -p -w "$popup_width" -h "$popup_height" -- \
       --ansi \
+      --disabled \
       --delimiter="$DELIM" \
       --with-nth=2,3,4 \
       --accept-nth=1 \
