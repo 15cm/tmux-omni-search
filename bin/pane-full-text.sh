@@ -257,7 +257,7 @@ preview_line_number_matches_query() {
   status=$?
   set -e
 
-  if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
+  if [ "$status" -ne 0 ] && [ "$status" -ne 1 ] && [ "$status" -ne 141 ]; then
     return "$status"
   fi
 
@@ -532,14 +532,14 @@ pane_search() {
         "$search_corpus"
     done < <(pane_rows)
   } | if [ -n "$query" ]; then
-    fzf --delimiter="$DELIM" --nth=6 --filter "$query"
+    fzf --delimiter="$DELIM" --nth=6.. --filter "$query"
   else
     cat
   fi
   status=$?
   set -e
 
-  if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
+  if [ "$status" -ne 0 ] && [ "$status" -ne 1 ] && [ "$status" -ne 141 ]; then
     return "$status"
   fi
 }
